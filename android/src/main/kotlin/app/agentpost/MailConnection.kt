@@ -3,9 +3,11 @@ package app.agentpost
 import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
+import android.util.AtomicFile
 import app.agentpost.core.*
 import com.sun.mail.imap.IMAPFolder
 import java.security.KeyStore
+import java.io.File
 import java.util.Base64
 import java.util.Date
 import java.util.Properties
@@ -38,6 +40,7 @@ data class HostProfile(
 
 class ProfileVault(context: Context) {
     private val prefs = context.getSharedPreferences("profile", Context.MODE_PRIVATE)
+    private val cacheFile = AtomicFile(File(context.noBackupFilesDir, "host-cache-v1"))
     private val alias = "agentpost-profile-v1"
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -52,27 +55,56 @@ class ProfileVault(context: Context) {
 
     fun read(): HostProfile? {
         val value = prefs.getString("sealed", null) ?: return null
-        val bytes = Base64.getDecoder().decode(value)
-        val plain = Cipher.getInstance("AES/GCM/NoPadding").run {
-            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
-            doFinal(bytes, 12, bytes.size - 12)
-        }
+        val plain = decrypt(Base64.getDecoder().decode(value))
         return wireJson.decodeFromString(HostProfile.serializer(), plain.decodeToString())
     }
 
     fun save(profile: HostProfile) {
-        val value = Cipher.getInstance("AES/GCM/NoPadding").run {
-            init(Cipher.ENCRYPT_MODE, key())
-            iv + doFinal(wireJson.encodeToString(HostProfile.serializer(), profile).encodeToByteArray())
-        }
+        val value = encrypt(wireJson.encodeToString(HostProfile.serializer(), profile).encodeToByteArray())
         check(prefs.edit().putString("sealed", Base64.getEncoder().encodeToString(value)).commit())
     }
 
-    fun clear() { prefs.edit().remove("sealed").apply() }
+    fun readCache(scope: String): HostCache? = runCatching {
+        val plain = decrypt(cacheFile.readFully(), scope.encodeToByteArray())
+        wireJson.decodeFromString(HostCache.serializer(), plain.decodeToString())
+    }.getOrNull()
+
+    fun saveCache(scope: String, cache: HostCache) {
+        val plain = cache.encodeWithin(2 * 1024 * 1024) ?: return
+        val value = encrypt(plain, scope.encodeToByteArray())
+        val stream = cacheFile.startWrite()
+        try {
+            stream.write(value)
+            cacheFile.finishWrite(stream)
+        } catch (e: Exception) {
+            cacheFile.failWrite(stream)
+            throw e
+        }
+    }
+
+    private fun encrypt(plain: ByteArray, associatedData: ByteArray? = null): ByteArray =
+        Cipher.getInstance("AES/GCM/NoPadding").run {
+            init(Cipher.ENCRYPT_MODE, key())
+            associatedData?.let(::updateAAD)
+            iv + doFinal(plain)
+        }
+
+    private fun decrypt(bytes: ByteArray, associatedData: ByteArray? = null): ByteArray =
+        Cipher.getInstance("AES/GCM/NoPadding").run {
+            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+            associatedData?.let(::updateAAD)
+            doFinal(bytes, 12, bytes.size - 12)
+        }
+
+    fun clear() {
+        prefs.edit().remove("sealed").apply()
+        cacheFile.delete()
+    }
 }
 
 class MailConnection(private val profile: HostProfile) : Connection {
     private val codec = MailCodec(profile.pairing)
+    val cacheScope = "agentpost-cache-v1\n${profile.email.lowercase()}\n${profile.bridge.lowercase()}\n${codec.keyId}"
     private val session = Session.getInstance(Properties().apply {
         for (protocol in listOf("imaps", "smtps")) {
             setProperty("mail." + protocol + ".ssl.checkserveridentity", "true")

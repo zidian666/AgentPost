@@ -196,7 +196,12 @@ private fun SessionsScreen(model: AgentPostModel) {
                             Text(model.host.orEmpty(), color = Color.White, fontSize = 21.sp,
                                 fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        Text(if (model.demo) "演示" else "邮件连接", color = Mint, fontSize = 12.sp)
+                        val source = when {
+                            model.demo -> "演示"
+                            model.listFromCache -> "本机缓存"
+                            else -> "邮件连接"
+                        }
+                        Text(source, color = Mint, fontSize = 12.sp)
                     }
                 }
             }
@@ -293,7 +298,12 @@ private fun ChatScreen(model: AgentPostModel) {
             Column(Modifier.weight(1f).padding(horizontal = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(model.selected?.title ?: "新建会话", fontSize = 19.sp, fontWeight = FontWeight.Bold,
                     maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(model.host.orEmpty() + if (model.demo) " · 演示" else " · Codex", color = Muted,
+                val source = when {
+                    model.demo -> "演示"
+                    model.historyFromCache -> "本机缓存"
+                    else -> "Codex"
+                }
+                Text(model.host.orEmpty() + " · " + source, color = Muted,
                     fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (model.selected != null) Action(Icons.Rounded.Refresh, "刷新历史", model.busy == null && model.delivery != "回复尚未确认") { model.history() }

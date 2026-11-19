@@ -16,6 +16,8 @@ import kotlinx.coroutines.withContext
 class AgentPostModel(application: Application) : AndroidViewModel(application) {
     private val vault = ProfileVault(application)
     private var connection: Connection? = null
+    private var cacheScope: String? = null
+    private var cache = HostCache()
     private var pending: Request? = null
     private var operation: Job? = null
     var host by mutableStateOf<String?>(null); private set
@@ -26,6 +28,8 @@ class AgentPostModel(application: Application) : AndroidViewModel(application) {
     var messages by mutableStateOf(emptyList<Message>()); private set
     var listCursor by mutableStateOf<String?>(null); private set
     var historyCursor by mutableStateOf<String?>(null); private set
+    var listFromCache by mutableStateOf(false); private set
+    var historyFromCache by mutableStateOf(false); private set
     var busy by mutableStateOf<String?>(null); private set
     var delivery by mutableStateOf<String?>(null); private set
     var issue by mutableStateOf<String?>(null); private set
@@ -36,8 +40,18 @@ class AgentPostModel(application: Application) : AndroidViewModel(application) {
     init {
         run("restore") {
             withContext(Dispatchers.IO) { vault.read() }?.let {
-                attach(it.name, MailConnection(it), false)
-                fetchSessions(false)
+                val gateway = MailConnection(it)
+                val saved = withContext(Dispatchers.IO) { vault.readCache(gateway.cacheScope) }
+                val savedList = saved?.sessions
+                attach(it.name, gateway, false, gateway.cacheScope)
+                if (saved != null && savedList != null) {
+                    cache = saved
+                    sessions = savedList.sessions
+                    listCursor = savedList.nextCursor
+                    listFromCache = true
+                } else {
+                    fetchSessions(false)
+                }
             }
         }
     }
@@ -54,29 +68,39 @@ class AgentPostModel(application: Application) : AndroidViewModel(application) {
         gateway.verifyMailbox()
         val list = requireSuccess(gateway.call(Request("list"))).result<SessionPage>()
         withContext(Dispatchers.IO) { vault.save(profile) }
-        attach(profile.name, gateway, false)
-        sessions = list.sessions
-        listCursor = list.nextCursor
+        attach(profile.name, gateway, false, gateway.cacheScope)
+        showSessions(list)
+        persistCache()
     }
 
-    private fun attach(name: String, gateway: Connection, isDemo: Boolean) {
+    private fun attach(name: String, gateway: Connection, isDemo: Boolean, scope: String? = null) {
         connection = gateway
+        cacheScope = scope
+        cache = HostCache()
         host = name
         demo = isDemo
         chat = false
         sessions = emptyList()
         listCursor = null
+        listFromCache = false
+        historyFromCache = false
     }
 
     fun disconnect() {
         if (busy != null) return
         if (!demo) vault.clear()
         connection = null
+        cacheScope = null
+        cache = HostCache()
         host = null
         chat = false
         selected = null
         sessions = emptyList()
         messages = emptyList()
+        listCursor = null
+        historyCursor = null
+        listFromCache = false
+        historyFromCache = false
         pending = null
         delivery = null
         draft = ""
@@ -88,19 +112,29 @@ class AgentPostModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun fetchSessions(more: Boolean) {
         val result = request(Request("list", cursor = if (more) listCursor else null)).result<SessionPage>()
-        sessions = (if (more) sessions + result.sessions else result.sessions).distinctBy { it.id }
-        listCursor = result.nextCursor
+        val page = if (more) result.copy(sessions = (sessions + result.sessions).distinctBy { it.id }) else result
+        showSessions(page)
+        persistCache()
+    }
+
+    private fun showSessions(page: SessionPage) {
+        sessions = page.sessions
+        listCursor = page.nextCursor
+        listFromCache = false
+        cache = cache.copy(sessions = page)
     }
 
     fun open(session: SessionSummary?) {
         if (busy != null) return
         issue = null
         selected = session
-        messages = emptyList()
-        historyCursor = null
+        val saved = session?.let { cache.histories[it.id] }
+        messages = saved?.messages.orEmpty()
+        historyCursor = saved?.nextCursor
+        historyFromCache = saved != null
         draft = draftByThread[session?.id].orEmpty()
         chat = true
-        if (session != null) history()
+        if (session != null && saved == null) history()
     }
 
     fun back() {
@@ -118,6 +152,11 @@ class AgentPostModel(application: Application) : AndroidViewModel(application) {
                 cursor = if (more) historyCursor else null)).result<History>()
             messages = (if (more) result.messages + messages else result.messages).distinctBy { it.id }
             historyCursor = result.nextCursor
+            historyFromCache = false
+            if (!more || messages.sumOf { it.text.length.toLong() } <= 256_000L) {
+                cache = cache.withHistory(thread.id, History(messages, historyCursor))
+                persistCache()
+            }
         }
     }
 
@@ -163,10 +202,14 @@ class AgentPostModel(application: Application) : AndroidViewModel(application) {
             val update = result.result<SendResult>()
             selected = update.thread
             sessions = listOf(update.thread) + sessions.filterNot { it.id == update.thread.id }
+            cache = cache.copy(sessions = SessionPage(sessions, listCursor))
+                .withHistory(update.thread.id, update.history)
             messages = update.history.messages
             historyCursor = update.history.nextCursor
+            historyFromCache = false
             pending = null
             delivery = null
+            persistCache()
         } catch (e: UserIssue) {
             pending = null
             delivery = "主机返回错误"
@@ -187,6 +230,15 @@ class AgentPostModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun request(request: Request, accepted: () -> Unit = {}) =
         requireSuccess(requireNotNull(connection).call(request, accepted))
+
+    private suspend fun persistCache() {
+        val scope = cacheScope ?: return
+        val snapshot = cache
+        withContext(Dispatchers.IO) {
+            // A local storage problem should not turn a successful mail request into a failed one.
+            runCatching { vault.saveCache(scope, snapshot) }
+        }
+    }
 
     private fun requireSuccess(response: Response): Response {
         if (response.stage == "error") throw UserIssue(response.error ?: "主机处理请求失败。", response.uncertain)
