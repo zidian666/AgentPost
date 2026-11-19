@@ -1,4 +1,4 @@
-# 码信 · AgentPost
+# AgentPost
 
 在 Android 上打开一台主机的 Codex 会话，读取历史、新建会话和继续对话。手机与配对主机通过邮箱交换加密请求，主机上的 Codex 使用原有账号运行。
 

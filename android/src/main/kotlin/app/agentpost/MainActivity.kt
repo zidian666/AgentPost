@@ -111,8 +111,7 @@ private fun ConnectScreen(model: AgentPostModel) {
                 focus.clearFocus()
                 pairingStep = false
             } else Brand()
-            Text("码信", color = Ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
-            Text("AgentPost", color = Muted, fontSize = 14.sp)
+            Text("AgentPost", color = Ink, fontWeight = FontWeight.Bold, fontSize = 22.sp)
         }
         Spacer(Modifier.height(10.dp))
         Surface(color = Forest, shape = Rounded) {
@@ -173,10 +172,7 @@ private fun SessionsScreen(model: AgentPostModel) {
         Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Brand()
-            Column(Modifier.weight(1f)) {
-                Text("码信", fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                Text("AgentPost", fontSize = 12.sp, color = Muted)
-            }
+            Text("AgentPost", modifier = Modifier.weight(1f), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             Action(Icons.Rounded.Refresh, "刷新会话", !busy) { model.refresh() }
             Box {
                 Action(Icons.Rounded.MoreVert, "主机选项", !busy) { menu = true }
