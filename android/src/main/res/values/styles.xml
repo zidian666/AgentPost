@@ -1,0 +1,6 @@
+<resources>
+    <style name="Theme.AgentPost" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowBackground">#F5F6EF</item>
+    </style>
+</resources>

@@ -1,0 +1,18 @@
+[mail]
+address = "bot@example.com"
+imap = "imap.qq.com"
+smtp = "smtp.qq.com"
+password_file = "/path/to/bridge-mail-password"
+
+[codex]
+socket = "~/.codex/app-server-control/app-server-control.sock"
+workspace = "~/codex"
+turn_timeout = 240
+
+[bridge]
+database = "~/.local/state/agentpost/bridge.sqlite3"
+poll_seconds = 4
+
+[[device]]
+email = "you@example.com"
+key = "REPLACE_WITH_GENERATED_PAIRING_KEY"
