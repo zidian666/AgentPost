@@ -1,5 +1,6 @@
 import argparse
 import email.policy
+import hashlib
 import imaplib
 import json
 import logging
@@ -14,7 +15,7 @@ import tomllib
 from contextlib import closing
 from email import message_from_bytes
 from email.message import EmailMessage
-from email.utils import getaddresses
+from email.utils import formatdate, getaddresses
 
 from .codex import BridgeError, Codex
 from .wire import Codec, MAX_REQUEST_BYTES, PREFIX, encode, valid_request
@@ -122,6 +123,10 @@ def deliver(db, mail, devices):
                 message["From"] = mail["address"]
                 message["To"] = address
                 message["Subject"] = codec.subject("response")
+                message["Date"] = formatdate()
+                fingerprint = hashlib.sha256(reply["body"].encode("ascii")).hexdigest()
+                domain = mail["address"].rsplit("@", 1)[-1]
+                message["Message-ID"] = f"<agentpost.{fingerprint}@{domain}>"
                 message.set_content(reply["body"], cte="base64")
                 smtp.send_message(message)
             with db:

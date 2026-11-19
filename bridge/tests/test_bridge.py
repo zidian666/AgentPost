@@ -3,6 +3,7 @@ import time
 import unittest
 import uuid
 from email.message import EmailMessage
+from email.utils import parsedate_to_datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -63,6 +64,8 @@ class BridgeTest(unittest.TestCase):
             deliver(self.db, {"address": BOT, "smtp": "smtp.example.com", "password": "fixture"}, self.devices)
             sent = smtp.return_value.__enter__.return_value.send_message.call_args_list
         self.assertEqual([str(call.args[0]["To"]) for call in sent], [USER, USER])
+        self.assertEqual(len({str(call.args[0]["Message-ID"]) for call in sent}), 2)
+        self.assertTrue(all(parsedate_to_datetime(call.args[0]["Date"]) for call in sent))
         replies = [self.codec.open("response", call.args[0].get_content()) for call in sent]
         self.assertEqual([reply["stage"] for reply in replies], ["accepted", "done"])
         self.assertEqual(replies[-1]["data"], {"sessions": [], "nextCursor": None})
