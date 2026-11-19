@@ -7,6 +7,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material3.*
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -46,7 +47,10 @@ private fun MarkdownBlocks(parent: Node, copy: (String) -> Unit) {
                     val start = (block as? OrderedList)?.markerStartNumber ?: 1
                     block.children.forEachIndexed { index, item ->
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(if (block is OrderedList) (start + index).toString() + "." else "•")
+                            Text(
+                                if (block is OrderedList) (start + index).toString() + "." else "•",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 25.sp,
+                            )
                             MarkdownBlocks(item, copy)
                         }
                     }
