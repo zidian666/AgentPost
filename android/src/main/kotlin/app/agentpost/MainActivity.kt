@@ -27,12 +27,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -159,9 +161,11 @@ private fun ConnectScreen(model: AgentPostModel) {
 @Composable
 private fun SessionsScreen(model: AgentPostModel) {
     var filter by rememberSaveable { mutableStateOf("") }
+    var searchFocused by remember { mutableStateOf(false) }
     var menu by remember { mutableStateOf(false) }
     var disconnect by remember { mutableStateOf(false) }
     val busy = model.busy != null
+    val searching = searchFocused && WindowInsets.ime.getBottom(LocalDensity.current) > 0
     val rows = model.sessions.filter {
         filter.isBlank() || listOf(it.title, it.preview, it.cwd).any { field -> field.contains(filter.trim(), true) }
     }
@@ -205,7 +209,8 @@ private fun SessionsScreen(model: AgentPostModel) {
                     modifier = Modifier.padding(top = 9.dp, bottom = 2.dp))
             }
             item {
-                OutlinedTextField(filter, { filter = it }, modifier = Modifier.fillMaxWidth(), singleLine = true,
+                OutlinedTextField(filter, { filter = it },
+                    modifier = Modifier.fillMaxWidth().onFocusChanged { searchFocused = it.isFocused }, singleLine = true,
                     placeholder = { Text("搜索已加载的会话") }, shape = CircleShape,
                     leadingIcon = { Icon(Icons.Rounded.Search, null) },
                     trailingIcon = { if (filter.isNotEmpty()) Action(Icons.Rounded.Close, "清空搜索") { filter = "" } })
@@ -213,8 +218,11 @@ private fun SessionsScreen(model: AgentPostModel) {
             if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 3.dp)) }
             model.issue?.let { item { Notice(it, "重试") { model.refresh() } } }
             if (rows.isEmpty() && !busy && model.issue == null) item {
-                Empty(Icons.Rounded.Forum, if (filter.isBlank()) "这台主机还没有会话" else "没有匹配的会话",
-                    if (filter.isBlank()) "新建会话，向主机上的 Codex 发一条消息。" else "试试其他关键词，或加载更多会话。")
+                if (filter.isBlank()) {
+                    Empty(Icons.Rounded.Forum, "这台主机还没有会话", "新建会话，向主机上的 Codex 发一条消息。")
+                } else {
+                    Text("没有匹配的会话", color = Muted, modifier = Modifier.padding(12.dp))
+                }
             }
             items(rows, key = { it.id }) { session ->
                 SessionRow(session, !busy) { model.open(session) }
@@ -225,7 +233,7 @@ private fun SessionsScreen(model: AgentPostModel) {
                 }
             }
         }
-        Surface(color = Paper, modifier = Modifier.fillMaxWidth()) {
+        if (!searching) Surface(color = Paper, modifier = Modifier.fillMaxWidth()) {
             Button(onClick = { model.open(null) }, enabled = !busy,
                 modifier = Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 10.dp)
                     .height(54.dp)) {

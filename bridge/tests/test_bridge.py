@@ -6,7 +6,7 @@ from email.message import EmailMessage
 from pathlib import Path
 from unittest.mock import patch
 
-from agentpost.codex import Codex
+from agentpost.codex import BridgeError, Codex
 from agentpost.service import database, deliver, ingest, initialize, process_job, recover
 from agentpost.wire import Codec
 
@@ -99,3 +99,11 @@ class BridgeTest(unittest.TestCase):
             history = agent.history("thread")
         self.assertEqual([entry["id"] for entry in history["messages"]], ["prompt", "result"])
         self.assertEqual(history["nextCursor"], "opaque")
+
+    def test_submit_keeps_result_uncertain_if_read_fails_after_completion(self):
+        agent = Codex({"workspace": "/workspace"})
+        replies = [{"thread": {"id": "thread"}}, {"turn": {"id": "turn"}}, BridgeError("read error")]
+        with patch.object(agent, "rpc", side_effect=replies), patch.object(agent, "wait_for_turn"):
+            with self.assertRaises(BridgeError) as error:
+                agent.submit(None, "hello")
+        self.assertTrue(error.exception.uncertain)

@@ -96,17 +96,24 @@ class Codex:
                 "approvalPolicy": "never",
                 "sandboxPolicy": {"type": "workspaceWrite", "writableRoots": [workspace], "networkAccess": False},
             })["turn"]
+        except BridgeError:
+            raise
+        except Exception as exc:
+            raise BridgeError("无法确认 Codex 是否已接收消息。请先在主机记录中核对，避免重复发送。", uncertain=True) from exc
+        try:
             self.wait_for_turn(thread_id, turn["id"])
             thread = self.rpc("thread/read", {"threadId": thread_id})["thread"]
             return {"thread": summary(thread), "history": self.history(thread_id)}
-        except BridgeError:
-            raise
+        except BridgeError as exc:
+            if exc.uncertain:
+                raise
+            raise BridgeError("消息已提交，但暂时无法读取结果。请在主机查看会话。", uncertain=True) from exc
         except Exception as exc:
             raise BridgeError("无法确认 Codex 是否已完成。请先在主机记录中核对，避免重复发送。", uncertain=True) from exc
 
     def wait_for_turn(self, thread_id, turn_id):
         deadline = time.monotonic() + self.config.get("turn_timeout", 240)
-        while True:
+        while self.events or time.monotonic() < deadline:
             event = self.events.pop(0) if self.events else self.receive(deadline)
             if event.get("method") != "turn/completed":
                 continue
@@ -116,6 +123,7 @@ class Codex:
                 if turn.get("status") != "completed":
                     raise BridgeError("Codex 任务已失败或中断。请刷新会话查看已保存的内容。", uncertain=True)
                 return
+        raise TimeoutError("Timed out waiting for the Codex turn")
 
 
 def summary(thread):
